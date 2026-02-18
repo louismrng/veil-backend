@@ -1,0 +1,253 @@
+###
+### Veil — Ejabberd Configuration
+### See MODULE_01_BACKEND.md for requirements.
+###
+
+define_macro:
+  DB_PASSWORD: "veil_dev_db_password_2024"
+
+hosts:
+  - "example.com"
+
+loglevel: info
+
+certfiles:
+  - "/etc/ejabberd/certs/server.pem"
+
+ca_file: "/etc/ejabberd/certs/ca.pem"
+
+listen:
+  # Client-to-server: STARTTLS (optional for local dev; clients may connect plaintext)
+  - port: 5222
+    module: ejabberd_c2s
+    ip: "::"
+    starttls: true
+    max_stanza_size: 262144
+    shaper: c2s_shaper
+    access: c2s
+
+  # Client-to-server: Direct TLS
+  - port: 5223
+    module: ejabberd_c2s
+    ip: "::"
+    tls: true
+    max_stanza_size: 262144
+    shaper: c2s_shaper
+    access: c2s
+
+  # HTTP: WebSocket for XMPP client connections
+  - port: 5280
+    module: ejabberd_http
+    ip: "::"
+    request_handlers:
+      "/ws": ejabberd_http_ws
+
+  # HTTPS: HTTP Upload + Admin API
+  - port: 5443
+    module: ejabberd_http
+    ip: "::"
+    tls: true
+    request_handlers:
+      "/upload": mod_http_upload
+      "/api": mod_http_api
+      "/admin": ejabberd_web_admin
+      "/ws": ejabberd_http_ws
+
+  # Server-to-server (disabled for v1 — single-server deployment)
+  # - port: 5269
+  #   module: ejabberd_s2s_in
+
+## Authentication
+auth_method: sql
+auth_password_format: scram
+auth_scram_hash: sha256
+
+## SQL Database (PostgreSQL)
+sql_type: pgsql
+sql_server: "db"
+sql_port: 5432
+sql_database: "ejabberd"
+sql_username: "ejabberd"
+sql_password: DB_PASSWORD
+sql_pool_size: 10
+
+default_db: sql
+
+## Access Control
+acl:
+  admin:
+    user: "admin@example.com"
+  local:
+    user_regexp: ""
+
+access_rules:
+  local:
+    allow: local
+  c2s:
+    deny: blocked
+    allow: all
+  register:
+    allow: all
+  pubsub_createnode:
+    allow: local
+  muc_create:
+    allow: local
+
+shaper:
+  normal:
+    rate: 3000
+    burst_size: 20000
+  fast:
+    rate: 50000
+    burst_size: 50000
+
+shaper_rules:
+  max_user_sessions: 10
+  max_user_offline_messages: 5000
+  c2s_shaper:
+    none: admin
+    normal: all
+
+api_permissions:
+  "registration and auth from api":
+    who: all
+    what:
+      - register
+      - check_account
+      - check_password
+  "muc management from api":
+    who: all
+    what:
+      - create_room_with_opts
+      - destroy_room
+      - get_room_affiliations
+      - set_room_affiliation
+      - get_user_rooms
+      - get_room_options
+      - change_room_option
+
+## Modules
+modules:
+  mod_adhoc: {}
+
+  mod_admin_extra: {}
+
+  mod_announce:
+    access: admin
+
+  mod_blocking: {}
+
+  mod_caps: {}
+
+  mod_client_state:
+    queue_chat_states: true
+    queue_presence: true
+
+  mod_configure: {}
+
+  mod_disco: {}
+
+  mod_http_upload:
+    host: "upload.@HOST@"
+    put_url: "https://upload.@HOST@/upload"
+    get_url: "https://upload.@HOST@/upload"
+    max_size: 104857600
+    docroot: "/var/lib/ejabberd/upload"
+    content_types:
+      "default": "application/octet-stream"
+    custom_headers:
+      "Access-Control-Allow-Origin": "*"
+      "Access-Control-Allow-Methods": "GET, PUT, OPTIONS"
+      "Access-Control-Allow-Headers": "Content-Type"
+
+  mod_last: {}
+
+  mod_mam:
+    default: always
+    request_activates_archiving: false
+    assume_mam_usage: true
+    cache_size: 1000
+    cache_life_time: 3600
+    db_type: sql
+
+  mod_muc:
+    host: "muc.@HOST@"
+    access_create: muc_create
+    access_admin: admin
+    default_room_options:
+      persistent: true
+      members_only: true
+      allow_change_subj: true
+      mam: true
+      allow_user_invites: true
+    db_type: sql
+
+  mod_muc_admin: {}
+
+  mod_offline:
+    access_max_user_messages: max_user_offline_messages
+    db_type: sql
+
+  mod_privacy: {}
+
+  mod_ping:
+    send_pings: true
+    ping_interval: 60
+    ping_ack_timeout: 30
+    timeout_action: kill
+
+  mod_pubsub:
+    host: "pubsub.@HOST@"
+    access_createnode: pubsub_createnode
+    plugins:
+      - "flat"
+      - "pep"
+    force_node_config:
+      # OMEMO key bundles — each device publishes its public key bundle
+      "urn:xmpp:omemo:2:bundles:*":
+        access_model: open
+        publish_model: open
+        max_items: 1
+        persist_items: true
+      # OMEMO device list — account-wide list of active device IDs
+      "urn:xmpp:omemo:2:devices":
+        access_model: open
+        publish_model: open
+        max_items: 1
+        persist_items: true
+    db_type: sql
+
+  mod_push:
+    include_sender: true
+    include_body: false    # CRITICAL: NEVER send plaintext in push notifications
+
+  mod_push_keepalive:
+    wake_on_start: true
+    wake_on_timeout: true
+    resume_timeout: 300
+
+  mod_register:
+    ip_access: all
+    access: register
+    welcome_message:
+      subject: "Welcome"
+      body: "Welcome to Veil"
+
+  mod_roster:
+    db_type: sql
+    versioning: true
+
+  mod_shared_roster:
+    db_type: mnesia
+
+  mod_stream_mgmt:
+    resend_on_timeout: true
+    resume_timeout: 5
+
+  mod_vcard:
+    db_type: sql
+
+  mod_vcard_xupdate: {}
+
+  mod_version:
+    show_os: false

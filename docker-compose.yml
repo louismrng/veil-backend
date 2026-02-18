@@ -1,0 +1,112 @@
+services:
+  db:
+    image: postgres:16
+    command: ["postgres", "-c", "password_encryption=md5"]
+    environment:
+      POSTGRES_DB: ejabberd
+      POSTGRES_USER: ejabberd
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: md5
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ejabberd"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ejabberd:
+    image: ghcr.io/processone/ejabberd:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./ejabberd/ejabberd.yml:/opt/ejabberd/conf/ejabberd.yml:ro
+      - ./certs:/etc/ejabberd/certs:ro
+      - ejabberd_upload:/var/lib/ejabberd/upload
+    ports:
+      - "5222:5222"
+      - "5223:5223"
+      - "5280:5280"
+      - "5443:5443"
+    environment:
+      EJABBERD_DB_PASSWORD: ${DB_PASSWORD}
+      CTL_ON_START: "! srg_create everyone example.com Everyone Everyone everyone ; ! srg_user_add @all@ example.com everyone example.com"
+
+  rtpengine:
+    image: drachtio/rtpengine:latest
+    entrypoint: ["/bin/bash", "/custom-entrypoint.sh"]
+    volumes:
+      - ./rtpengine/entrypoint.sh:/custom-entrypoint.sh:ro
+    ports:
+      - "20000-20100:20000-20100/udp"
+    environment:
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+      PORT_MIN: "20000"
+      PORT_MAX: "20100"
+      LOG_LEVEL: "6"
+
+  kamailio:
+    build: ./kamailio
+    depends_on:
+      db:
+        condition: service_healthy
+      rtpengine:
+        condition: service_started
+    volumes:
+      - ./kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg.tmpl:ro
+      - ./kamailio/tls.cfg:/etc/kamailio/tls.cfg:ro
+      - ./certs:/etc/kamailio/certs:ro
+    ports:
+      - "5060:5060/udp"
+      - "5061:5061/tcp"
+      - "8089:8089/tcp"
+    environment:
+      KAM_DB_PASS: ${DB_PASSWORD}
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+
+  coturn:
+    image: coturn/coturn:latest
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+    # Uses host network for UDP relay; ports 3478, 5349, 49152-65535 bind directly
+    network_mode: host
+    environment:
+      TURN_SECRET: ${TURN_SECRET}
+
+  api:
+    build: ./api
+    depends_on:
+      db:
+        condition: service_healthy
+      ejabberd:
+        condition: service_started
+    ports:
+      - "8443:8443"
+    environment:
+      DB_URL: "postgresql://ejabberd:${DB_PASSWORD}@db/ejabberd"
+      TURN_SECRET: ${TURN_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      EJABBERD_API_URL: "https://ejabberd:5443/api"
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-example.com}
+      XMPP_HOST: ${XMPP_HOST:-localhost}
+      XMPP_WS_URL: ${XMPP_WS_URL:-ws://localhost:5280/ws}
+      SIP_DOMAIN: ${SIP_DOMAIN:-${SERVER_IP:-localhost}}
+      TURN_DOMAIN: ${TURN_DOMAIN:-${SERVER_IP:-localhost}}
+      HTTP_UPLOAD_DOMAIN: ${HTTP_UPLOAD_DOMAIN:-upload.example.com}
+      SERVER_VERSION: ${SERVER_VERSION:-1.0.0}
+      MIN_CLIENT_VERSION: ${MIN_CLIENT_VERSION:-1.0.0}
+      APNS_KEY_PATH: ${APNS_KEY_PATH:-/etc/veil/apns_key.p8}
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-com.example.veil}
+      FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-/etc/veil/fcm_service_account.json}
+
+volumes:
+  pgdata:
+  ejabberd_upload:

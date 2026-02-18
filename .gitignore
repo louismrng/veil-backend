@@ -1,0 +1,16 @@
+# Secrets — never commit
+.env
+
+# TLS certificates
+certs/*.pem
+certs/*.key
+certs/*.crt
+!certs/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Docker volumes
+pgdata/
