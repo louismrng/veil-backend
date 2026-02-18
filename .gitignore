@@ -14,3 +14,6 @@ __pycache__/
 
 # Docker volumes
 pgdata/
+
+# Scripts are executable
+!scripts/*.sh

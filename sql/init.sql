@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS subscriber (
     id              SERIAL PRIMARY KEY,
     username        TEXT NOT NULL,
-    domain          TEXT NOT NULL DEFAULT 'example.com',
+    domain          TEXT NOT NULL DEFAULT 'localhost',
     password        TEXT NOT NULL,
     ha1             TEXT NOT NULL,
     ha1b            TEXT NOT NULL,

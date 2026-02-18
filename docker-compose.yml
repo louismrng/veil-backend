@@ -18,14 +18,14 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   ejabberd:
-    image: ghcr.io/processone/ejabberd:latest
+    build: ./ejabberd
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - ./ejabberd/ejabberd.yml:/opt/ejabberd/conf/ejabberd.yml:ro
       - ./certs:/etc/ejabberd/certs:ro
       - ejabberd_upload:/var/lib/ejabberd/upload
     ports:
@@ -34,8 +34,10 @@ services:
       - "5280:5280"
       - "5443:5443"
     environment:
-      EJABBERD_DB_PASSWORD: ${DB_PASSWORD}
-      CTL_ON_START: "! srg_create everyone example.com Everyone Everyone everyone ; ! srg_user_add @all@ example.com everyone example.com"
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-example.com}
+      DB_PASSWORD: ${DB_PASSWORD}
+      CTL_ON_START: "! srg_create everyone ${XMPP_DOMAIN:-example.com} Everyone Everyone everyone ; ! srg_user_add @all@ ${XMPP_DOMAIN:-example.com} everyone ${XMPP_DOMAIN:-example.com}"
+    restart: unless-stopped
 
   rtpengine:
     image: drachtio/rtpengine:latest
@@ -49,6 +51,7 @@ services:
       PORT_MIN: "20000"
       PORT_MAX: "20100"
       LOG_LEVEL: "6"
+    restart: unless-stopped
 
   kamailio:
     build: ./kamailio
@@ -68,16 +71,23 @@ services:
     environment:
       KAM_DB_PASS: ${DB_PASSWORD}
       SERVER_IP: ${SERVER_IP:-127.0.0.1}
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-example.com}
+    restart: unless-stopped
 
   coturn:
     image: coturn/coturn:latest
+    entrypoint: ["/bin/sh", "/etc/coturn/entrypoint.sh"]
     volumes:
-      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf.tmpl:ro
+      - ./coturn/entrypoint.sh:/etc/coturn/entrypoint.sh:ro
       - ./certs:/etc/coturn/certs:ro
     # Uses host network for UDP relay; ports 3478, 5349, 49152-65535 bind directly
     network_mode: host
     environment:
       TURN_SECRET: ${TURN_SECRET}
+      XMPP_DOMAIN: ${XMPP_DOMAIN:-example.com}
+      SERVER_IP: ${SERVER_IP:-127.0.0.1}
+    restart: unless-stopped
 
   api:
     build: ./api
@@ -106,6 +116,7 @@ services:
       APNS_TEAM_ID: ${APNS_TEAM_ID:-}
       APNS_BUNDLE_ID: ${APNS_BUNDLE_ID:-com.example.veil}
       FCM_SERVICE_ACCOUNT_PATH: ${FCM_SERVICE_ACCOUNT_PATH:-/etc/veil/fcm_service_account.json}
+    restart: unless-stopped
 
 volumes:
   pgdata:
