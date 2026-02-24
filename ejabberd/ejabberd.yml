@@ -242,7 +242,7 @@ modules:
 
   mod_stream_mgmt:
     resend_on_timeout: true
-    resume_timeout: 5
+    resume_timeout: 300
 
   mod_vcard:
     db_type: sql
