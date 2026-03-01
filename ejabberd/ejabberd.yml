@@ -123,6 +123,14 @@ api_permissions:
       - add_rosteritem
       - process_rosteritems
       - get_roster
+  "shared roster management from api":
+    # WARNING: who:all is for local dev only. Restrict in production.
+    who: all
+    what:
+      - srg_create
+      - srg_user_add
+      - srg_delete
+      - srg_get_members
   "muc management from api":
     # WARNING: who:all is for local dev only. Restrict in production.
     who: all

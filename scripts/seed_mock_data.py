@@ -68,62 +68,57 @@ def register_users(api_url: str) -> bool:
     return ok
 
 
-def setup_rosters(ejabberd_api_url: str, domain: str) -> bool:
-    """Add mutual roster entries between testuser and all contacts.
+def setup_shared_roster(ejabberd_api_url: str, domain: str) -> bool:
+    """Create a shared roster group so all users see all other users.
 
-    Returns True if all roster operations succeeded.
+    Uses mod_shared_roster's @all@ wildcard to dynamically include every
+    registered user. Returns True if the operation succeeded.
     """
-    print("\n=== Setting up rosters ===")
+    print("\n=== Setting up shared roster group ===")
     ok = True
-    contacts = [(u, n) for u, n in USERS if u != "testuser"]
 
     with httpx.Client(verify=False, timeout=15.0) as client:
-        for username, display_name in contacts:
-            # testuser -> contact
-            try:
-                resp = client.post(
-                    f"{ejabberd_api_url}/add_rosteritem",
-                    json={
-                        "localuser": "testuser",
-                        "localserver": domain,
-                        "user": username,
-                        "server": domain,
-                        "nick": display_name,
-                        "group": "",
-                        "subs": "both",
-                    },
-                )
-                if resp.status_code == 200:
-                    print(f"  testuser -> {username}: [OK]")
-                else:
-                    print(f"  testuser -> {username}: [FAIL ({resp.status_code})] {resp.text}")
-                    ok = False
-            except httpx.HTTPError as e:
-                print(f"  testuser -> {username}: [ERROR] {e}")
+        # Create (or re-create) the "everyone" shared roster group
+        try:
+            resp = client.post(
+                f"{ejabberd_api_url}/srg_create",
+                json={
+                    "group": "everyone",
+                    "host": domain,
+                    "label": "Everyone",
+                    "description": "All company users",
+                    "display": "everyone",
+                },
+            )
+            if resp.status_code == 200:
+                print("  Created shared roster group 'everyone': [OK]")
+            else:
+                print(f"  Created shared roster group 'everyone': [FAIL ({resp.status_code})] {resp.text}")
                 ok = False
+        except httpx.HTTPError as e:
+            print(f"  Created shared roster group 'everyone': [ERROR] {e}")
+            ok = False
 
-            # contact -> testuser
-            try:
-                resp = client.post(
-                    f"{ejabberd_api_url}/add_rosteritem",
-                    json={
-                        "localuser": username,
-                        "localserver": domain,
-                        "user": "testuser",
-                        "server": domain,
-                        "nick": "Test User",
-                        "group": "",
-                        "subs": "both",
-                    },
-                )
-                if resp.status_code == 200:
-                    print(f"  {username} -> testuser: [OK]")
-                else:
-                    print(f"  {username} -> testuser: [FAIL ({resp.status_code})] {resp.text}")
-                    ok = False
-            except httpx.HTTPError as e:
-                print(f"  {username} -> testuser: [ERROR] {e}")
+        # Add @all@ wildcard so every registered user is included
+        try:
+            resp = client.post(
+                f"{ejabberd_api_url}/srg_user_add",
+                json={
+                    "user": "@all@",
+                    "host": domain,
+                    "group": "everyone",
+                    "grouphost": domain,
+                },
+            )
+            if resp.status_code == 200:
+                print("  Added @all@ to 'everyone' group: [OK]")
+            else:
+                print(f"  Added @all@ to 'everyone' group: [FAIL ({resp.status_code})] {resp.text}")
                 ok = False
+        except httpx.HTTPError as e:
+            print(f"  Added @all@ to 'everyone' group: [ERROR] {e}")
+            ok = False
+
     return ok
 
 
@@ -229,7 +224,7 @@ def main() -> None:
     if not register_users(args.api_url):
         had_errors = True
 
-    if not setup_rosters(ejabberd_api_url, args.domain):
+    if not setup_shared_roster(ejabberd_api_url, args.domain):
         had_errors = True
 
     if args.with_rooms:
