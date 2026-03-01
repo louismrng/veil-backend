@@ -115,6 +115,12 @@ api_permissions:
       - register
       - check_account
       - check_password
+  "roster management from api":
+    who: all
+    what:
+      - add_rosteritem
+      - process_rosteritems
+      - get_roster
   "muc management from api":
     who: all
     what:
