@@ -41,9 +41,13 @@ ROOMS = [
 ]
 
 
-def register_users(api_url: str) -> None:
-    """Register all users via the FastAPI registration endpoint."""
+def register_users(api_url: str) -> bool:
+    """Register all users via the FastAPI registration endpoint.
+
+    Returns True if all registrations succeeded (or already existed).
+    """
     print("=== Registering users ===")
+    ok = True
     with httpx.Client(verify=False, timeout=15.0) as client:
         for username, display_name in USERS:
             try:
@@ -57,13 +61,20 @@ def register_users(api_url: str) -> None:
                     print(f"  [SKIP] {username} already exists")
                 else:
                     print(f"  [FAIL] {username}: {resp.status_code} {resp.text}")
+                    ok = False
             except httpx.HTTPError as e:
                 print(f"  [ERROR] {username}: {e}")
+                ok = False
+    return ok
 
 
-def setup_rosters(ejabberd_api_url: str, domain: str) -> None:
-    """Add mutual roster entries between testuser and all contacts."""
+def setup_rosters(ejabberd_api_url: str, domain: str) -> bool:
+    """Add mutual roster entries between testuser and all contacts.
+
+    Returns True if all roster operations succeeded.
+    """
     print("\n=== Setting up rosters ===")
+    ok = True
     contacts = [(u, n) for u, n in USERS if u != "testuser"]
 
     with httpx.Client(verify=False, timeout=15.0) as client:
@@ -74,18 +85,22 @@ def setup_rosters(ejabberd_api_url: str, domain: str) -> None:
                     f"{ejabberd_api_url}/add_rosteritem",
                     json={
                         "localuser": "testuser",
-                        "localhost": domain,
+                        "localserver": domain,
                         "user": username,
-                        "host": domain,
+                        "server": domain,
                         "nick": display_name,
                         "group": "",
                         "subs": "both",
                     },
                 )
-                status = "OK" if resp.status_code == 200 else f"FAIL ({resp.status_code})"
-                print(f"  testuser -> {username}: [{status}]")
+                if resp.status_code == 200:
+                    print(f"  testuser -> {username}: [OK]")
+                else:
+                    print(f"  testuser -> {username}: [FAIL ({resp.status_code})] {resp.text}")
+                    ok = False
             except httpx.HTTPError as e:
                 print(f"  testuser -> {username}: [ERROR] {e}")
+                ok = False
 
             # contact -> testuser
             try:
@@ -93,23 +108,32 @@ def setup_rosters(ejabberd_api_url: str, domain: str) -> None:
                     f"{ejabberd_api_url}/add_rosteritem",
                     json={
                         "localuser": username,
-                        "localhost": domain,
+                        "localserver": domain,
                         "user": "testuser",
-                        "host": domain,
+                        "server": domain,
                         "nick": "Test User",
                         "group": "",
                         "subs": "both",
                     },
                 )
-                status = "OK" if resp.status_code == 200 else f"FAIL ({resp.status_code})"
-                print(f"  {username} -> testuser: [{status}]")
+                if resp.status_code == 200:
+                    print(f"  {username} -> testuser: [OK]")
+                else:
+                    print(f"  {username} -> testuser: [FAIL ({resp.status_code})] {resp.text}")
+                    ok = False
             except httpx.HTTPError as e:
                 print(f"  {username} -> testuser: [ERROR] {e}")
+                ok = False
+    return ok
 
 
-def create_rooms(ejabberd_api_url: str, domain: str) -> None:
-    """Create MUC rooms and add members."""
+def create_rooms(ejabberd_api_url: str, domain: str) -> bool:
+    """Create MUC rooms and add members.
+
+    Returns True if all room operations succeeded.
+    """
     print("\n=== Creating group rooms ===")
+    ok = True
     muc_domain = f"muc.{domain}"
 
     with httpx.Client(verify=False, timeout=15.0) as client:
@@ -133,10 +157,14 @@ def create_rooms(ejabberd_api_url: str, domain: str) -> None:
                         ],
                     },
                 )
-                status = "OK" if resp.status_code == 200 else f"FAIL ({resp.status_code})"
-                print(f"  Room {room_jid}: [{status}]")
+                if resp.status_code == 200:
+                    print(f"  Room {room_jid}: [OK]")
+                else:
+                    print(f"  Room {room_jid}: [FAIL ({resp.status_code})] {resp.text}")
+                    ok = False
             except httpx.HTTPError as e:
                 print(f"  Room {room_jid}: [ERROR] {e}")
+                ok = False
 
             # Set testuser as owner
             try:
@@ -153,10 +181,7 @@ def create_rooms(ejabberd_api_url: str, domain: str) -> None:
                 pass
 
             # Add members
-            all_members = ["testuser"] + members
-            for member in all_members:
-                if member == "testuser":
-                    continue
+            for member in members:
                 try:
                     resp = client.post(
                         f"{ejabberd_api_url}/set_room_affiliation",
@@ -167,10 +192,15 @@ def create_rooms(ejabberd_api_url: str, domain: str) -> None:
                             "affiliation": "member",
                         },
                     )
-                    status = "OK" if resp.status_code == 200 else f"FAIL ({resp.status_code})"
-                    print(f"    + {member}: [{status}]")
+                    if resp.status_code == 200:
+                        print(f"    + {member}: [OK]")
+                    else:
+                        print(f"    + {member}: [FAIL ({resp.status_code})] {resp.text}")
+                        ok = False
                 except httpx.HTTPError as e:
                     print(f"    + {member}: [ERROR] {e}")
+                    ok = False
+    return ok
 
 
 def main() -> None:
@@ -194,14 +224,24 @@ def main() -> None:
     print(f"XMPP Domain: {args.domain}")
     print()
 
-    register_users(args.api_url)
-    setup_rosters(ejabberd_api_url, args.domain)
+    had_errors = False
+
+    if not register_users(args.api_url):
+        had_errors = True
+
+    if not setup_rosters(ejabberd_api_url, args.domain):
+        had_errors = True
 
     if args.with_rooms:
-        create_rooms(ejabberd_api_url, args.domain)
+        if not create_rooms(ejabberd_api_url, args.domain):
+            had_errors = True
 
     print("\n=== Done ===")
     print(f"Login as: testuser / {DEFAULT_PASSWORD}")
+
+    if had_errors:
+        print("\nSome operations failed — check output above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

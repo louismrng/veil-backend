@@ -110,18 +110,21 @@ shaper_rules:
 
 api_permissions:
   "registration and auth from api":
+    # WARNING: who:all is for local dev only. Restrict in production.
     who: all
     what:
       - register
       - check_account
       - check_password
   "roster management from api":
+    # WARNING: who:all is for local dev only. Restrict in production.
     who: all
     what:
       - add_rosteritem
       - process_rosteritems
       - get_roster
   "muc management from api":
+    # WARNING: who:all is for local dev only. Restrict in production.
     who: all
     what:
       - create_room_with_opts
